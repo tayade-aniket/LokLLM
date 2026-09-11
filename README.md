@@ -39,7 +39,7 @@ The problem is particularly acute in the Indian context, where:
 - **Infrastructure is heterogeneous and constrained.** The median Indian smartphone ships with 4–6 GB RAM, a mid-range ARM SoC (e.g., Snapdragon 680 / MediaTek Helio G85) with no dedicated AI accelerator beyond a basic NPU, and a 4G connection that averages 15–25 Mbps but is frequently interrupted. Mobile data costs, while declining, remain a meaningful constraint for rural and semi-urban users.
 - **Regulatory pressure is increasing.** India's Digital Personal Data Protection (DPDP) Act 2023 introduces binding obligations on data fiduciaries regarding consent, purpose limitation, and cross-border data transfer — creating legal risk for applications that blindly forward user conversations to offshore inference endpoints.
 
-### What PRIVFEDQLORA Proposes
+### What LokLLM Proposes
 
 PRIVFEDQLORA is a research prototype that demonstrates a **privacy-first, on-device personalization pipeline** for 2–7 billion parameter language models, designed to operate within the hardware envelope of Indian mid-range consumer devices. The system integrates three complementary technologies:
 
