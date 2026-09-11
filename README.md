@@ -26,19 +26,119 @@
 
 ---
 
-## What is this?
+## Problem Statement
 
-Imagine you're a doctor in a rural Hindi-speaking district. Your phone's AI assistant could be incredibly helpful — but only if it understands your specific medical context and language. The catch? Training it on your patients' data means their information leaves your hands. That's not acceptable.
+### The Dependency Problem
 
-PRIVFEDQLORA solves this. It lets a language model learn from your private local data — without ever sending that data anywhere. Only a tiny set of model weight updates (about 192 KB, smaller than most profile photos) gets shared. The raw data stays exactly where it belongs: on your device.
+India's AI adoption is accelerating — yet the country remains deeply dependent on externally hosted large language model (LLM) platforms such as ChatGPT, Gemini, DeepSeek, and Kimi. Every query sent to these services potentially exposes personally identifiable information (PII): a patient's symptom history in Hindi, a farmer's crop disease query in Tamil, a household's UPI transaction logs, or a student's learning difficulties in Marathi. This silent data exfiltration is not hypothetical — it is the default operating mode.
 
-We built this for three real-world Indian use cases:
+The problem is particularly acute in the Indian context, where:
 
-| Client | Domain | Language |
-|--------|--------|----------|
-| 🏥 Client 1 | Rural Healthcare | Hindi |
-| 📚 Client 2 | School Education | Marathi |
-| 💰 Client 3 | Financial Literacy | Tamil |
+- **Linguistic diversity** demands domain-specific adaptation across 22 scheduled languages. A single globally trained model trained predominantly on English and Mandarin corpora performs poorly on code-switched Hindi-English queries, agglutinative Tamil morphology, or the Devanagari script used across Hindi, Marathi, Konkani, and Sanskrit.
+- **Use cases carry high sensitivity** — vernacular health consultations, agricultural advisory (where wrong advice destroys a season's crop), microfinance eligibility queries, and school examination guidance all involve information that users would not willingly broadcast to foreign cloud servers.
+- **Infrastructure is heterogeneous and constrained.** The median Indian smartphone ships with 4–6 GB RAM, a mid-range ARM SoC (e.g., Snapdragon 680 / MediaTek Helio G85) with no dedicated AI accelerator beyond a basic NPU, and a 4G connection that averages 15–25 Mbps but is frequently interrupted. Mobile data costs, while declining, remain a meaningful constraint for rural and semi-urban users.
+- **Regulatory pressure is increasing.** India's Digital Personal Data Protection (DPDP) Act 2023 introduces binding obligations on data fiduciaries regarding consent, purpose limitation, and cross-border data transfer — creating legal risk for applications that blindly forward user conversations to offshore inference endpoints.
+
+### What PRIVFEDQLORA Proposes
+
+PRIVFEDQLORA is a research prototype that demonstrates a **privacy-first, on-device personalization pipeline** for 2–7 billion parameter language models, designed to operate within the hardware envelope of Indian mid-range consumer devices. The system integrates three complementary technologies:
+
+#### 1. Edge-Deployable Base Models (2–7B Parameters, 4-bit NF4 Quantization)
+
+Full-precision 7B models require ~28 GB of GPU VRAM — far beyond any consumer smartphone. We target the **4-bit NF4 quantization** tier via QLoRA (Dettmers et al., 2023), which reduces a 7B model to approximately 3.5–4 GB of resident memory, making inference and adapter training feasible on devices with 6–8 GB RAM. For the most constrained 4 GB class (the modal specification for sub-₹12,000 devices), we additionally evaluate 1.1B parameter models (TinyLlama, Gemma-2 2B) that fit within a 2.5 GB footprint at 4-bit precision. We explicitly test and report inference latency (tokens/second), memory high-watermark, and energy consumption across both tiers.
+
+| Model Tier | Params | Quantization | RAM Footprint | Target Device |
+|---|---|---|---|---|
+| Tier 1 | 1.1–2B | 4-bit NF4 | ~1.5–2.5 GB | 4 GB RAM, no GPU |
+| Tier 2 | 7B | 4-bit NF4 | ~3.5–4 GB | 6–8 GB RAM, entry NPU |
+| Tier 3 | 7B | 8-bit | ~7 GB | 8 GB RAM, mid-range GPU |
+
+#### 2. QLoRA Fine-Tuning: Adapter Ranks, Target Modules, and Serving Strategy
+
+We adapt the frozen quantized base model using **Low-Rank Adaptation (LoRA)** injected into the attention projection layers. The specific implementation choices:
+
+- **Adapter ranks under evaluation:** r ∈ {8, 16, 64}. Lower ranks (r=8, ~49K trainable parameters) minimize communication overhead and memory; higher ranks (r=64) allow richer domain capture at the cost of ~392K parameters per adapter — still under 1.5 MB.
+- **Target modules:** We inject LoRA into `q_proj` and `v_proj` by default (following Hu et al., 2022), and separately ablate full attention (`q_proj`, `k_proj`, `v_proj`, `o_proj`) and all linear layers including `gate_proj`, `up_proj`, `down_proj` in MLP blocks. The tradeoff between adaptation quality and adapter size is reported explicitly.
+- **Adapter serving without full model reload:** Trained adapters are stored as separate `.safetensors` files and merged at inference time using PEFT's `merge_and_unload()` pathway. This allows the base model to remain resident in memory while domain-specific adapters are hot-swapped — a critical efficiency requirement for multi-domain use on resource-constrained devices.
+
+#### 3. Federated Learning Architecture: Aggregation, Client Selection, and Cold-Start
+
+The federation layer enables multiple isolated clients (clinics, schools, cooperative banks) to collaboratively improve a shared adapter without exchanging raw data.
+
+- **Aggregation protocol:** We implement **FedAvg** (McMahan et al., 2017) as the baseline and provide a hook for **FedProx** (Li et al., 2020), which adds a proximal regularization term (μ) to stabilize training under the high statistical heterogeneity (non-IID data distributions) typical of real-world Indian deployments. FedProx is particularly relevant when one client's dataset is 10× larger than another's — a realistic scenario when a district hospital participates alongside a rural health sub-centre.
+- **Client selection under device heterogeneity:** Not all devices can complete a training round within a given time window. We model asynchronous participation with a minimum viable cohort (at least 2 of N clients must return updates per round) and use weighted averaging proportional to local dataset size. Stragglers are excluded from the current round but participate in the next.
+- **Communication frequency:** We target **1–3 communication rounds** for the prototype, with each round transmitting adapter deltas of ~192 KB (r=4) to ~1.5 MB (r=64) — well within a single HTTPS POST even on a 2G fallback connection. For real deployment, we envision opportunistic synchronization over Wi-Fi at night to avoid mobile data costs.
+- **Cold-start handling:** New users receive the current global adapter as a starting point, pre-loaded onto the device alongside the base model. Initial personalization is achieved via **few-shot prompting** (5–10 representative examples stored locally) until enough local interactions accumulate to trigger a fine-tuning round (threshold: ≥50 labelled examples). This hybrid approach avoids the cold-start degradation that plagues pure federated systems.
+
+### Supported Indian Use Cases
+
+We demonstrate the system across three client personas that reflect real unmet needs:
+
+| Client | Domain | Language(s) | Illustrative Queries |
+|--------|--------|-------------|---------------------|
+| 🏥 Client 1 | Rural Healthcare | Hindi + code-switched English | Symptom triage, medication dosage queries, referral advice in Devanagari script |
+| 📚 Client 2 | School Education | Marathi | Curriculum-aligned doubt resolution, exam preparation, teacher aide for government school syllabus |
+| 💰 Client 3 | Financial Literacy | Tamil | UPI payment guidance, KYC query handling, microfinance eligibility, SHG record-keeping |
+
+Future extensions target agricultural advisory (pest identification, MSP price queries in Kannada/Telugu) and vernacular legal aid (tenant rights, MNREGA entitlements).
+
+### Threat Model and Privacy Guarantees
+
+"Privacy-preserving" is not a monolithic claim. We are explicit about what we protect against and what we do not:
+
+| Threat | In Scope? | Mechanism |
+|--------|-----------|-----------|
+| Honest-but-curious aggregation server observing raw training data | ✅ Yes | Data never leaves the device; only adapter deltas are transmitted |
+| Gradient inversion / model inversion attacks reconstructing training samples from adapter updates | ⚠️ Partial | L2 norm clipping + Gaussian DP noise (demonstration; not formally calibrated) |
+| Colluding clients attempting to reconstruct another client's data | 🔵 Simulated | Additive secret masking modelled; cryptographic SecAgg not implemented |
+| Inference-time user query privacy (queries to the local model) | ✅ Yes | All inference is local; no query leaves the device |
+| Membership inference against the global model | ❌ Out of scope | Formal DP auditing with Rényi DP accountant not included |
+
+Our differential privacy implementation adds calibrated Gaussian noise with a nominal **ε = 8, δ = 10⁻⁵** budget (demonstration values). A production deployment would require formal composition analysis across rounds using a Rényi DP accountant (Mironov, 2017) and a privacy audit against a shadow-model attack. We document this gap clearly rather than hiding it.
+
+### Evaluation Methodology
+
+Beyond task accuracy, we measure what actually matters for edge deployment:
+
+**Datasets:**
+- Synthetic multilingual dialogue sets (hand-crafted; Hindi, Marathi, Tamil) — 30 samples per client for the prototype
+- IndicNLP Corpus and Samanantar parallel corpora for multilingual robustness evaluation (planned)
+- Synthetic financial dialogue based on public RBI financial literacy materials
+- Ayushman Bharat scheme FAQs for health domain evaluation
+
+**Metrics:**
+| Category | Metric |
+|----------|--------|
+| Quality | ROUGE-L, BERTScore (multilingual), human preference |
+| Efficiency | Inference latency (tokens/sec), memory high-watermark (MB), energy (mAh/query) |
+| Communication | Adapter size (KB), rounds to convergence |
+| Privacy | Membership inference AUC, gradient norm distribution, DP ε budget consumed |
+| Utility-privacy tradeoff | Quality vs. ε curves at r ∈ {8, 16, 64} |
+
+**Baselines:**
+1. Zero-shot prompting of the untuned base model
+2. Centralized fine-tuning on pooled data (upper bound; privacy-violating)
+3. Local fine-tuning without federation (no knowledge sharing)
+4. PRIVFEDQLORA (FedAvg / FedProx with DP)
+
+### Deployment Narrative and Regulatory Compliance
+
+**Model distribution:** The base model (1.1–7B, 4-bit quantized) is distributed as a one-time download (~2–4 GB) over Wi-Fi, analogous to an OTA system update. For devices where even this is impractical, we explore sideloading via USB from a local service centre — a realistic distribution channel in Tier 3/4 Indian towns. Adapter updates (~200 KB) are distributed over any connection including 2G.
+
+**Connectivity-resilient synchronization:** The federation client implements an **offline-first** design. Local training proceeds regardless of connectivity. Adapter uploads and downloads are queued and executed when a Wi-Fi connection is detected, using resumable HTTP uploads to tolerate mid-transfer drops.
+
+**DPDP Act 2023 compliance posture:** Since no personal data leaves the device, the system avoids most obligations that arise from data fiduciary status. The aggregation server processes only anonymized adapter weight deltas, not personal data — a distinction that substantially reduces regulatory exposure. We recommend a Data Protection Impact Assessment (DPIA) for any production deployment and note that the DPDP Act's consent framework applies to the local data collection step, not the federated aggregation step.
+
+### Honest Limitations
+
+Staying on-device means making real sacrifices. We acknowledge them directly:
+
+- **No real-time web access.** The local model's knowledge is frozen at its training cut-off. Queries requiring current news, live prices, or today's weather cannot be answered accurately.
+- **Reduced context window.** Memory constraints limit practical context to 512–2048 tokens on 4 GB devices, versus 32K–128K tokens available in cloud APIs. Long documents cannot be processed in a single pass.
+- **State-of-the-art reasoning gap.** A 1.1–7B on-device model is meaningfully weaker than GPT-4-class systems on complex multi-step reasoning, mathematics, and code generation. This is the fundamental quality-privacy tradeoff.
+- **Hybrid cloud escape hatch:** For queries that genuinely require capabilities beyond on-device scope (e.g., real-time stock prices, complex legal document drafting), we envision an **opt-in, user-triggered** hybrid mode that routes the query to a privacy-respecting cloud endpoint with explicit consent, stripping PII before transmission via a local anonymization filter. This preserves the privacy guarantee for the default case while offering an upgrade path.
+
+We built this prototype to demonstrate that the correct architecture, applied honestly on real hardware, is more valuable than an impressive demo that obscures its constraints.
 
 ---
 
@@ -217,8 +317,8 @@ PRIVFEDQLORA/
 ### 1. Clone and enter the project
 
 ```bash
-git clone <your-repo-url>
-cd PRIVFEDQLORA
+git clone https://github.com/tayade-aniket/LokLLM
+cd LokLLM
 ```
 
 ### 2. Create a virtual environment
