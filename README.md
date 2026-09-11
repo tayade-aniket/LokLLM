@@ -1,10 +1,10 @@
 <div align="center">
 
-# 🔒 PRIVFEDQLORA
+# 🔒 LokLLM
 
 ### Privacy-Preserving On-Device Personalization of LLMs via Federated QLoRA
 
-*A hackathon research prototype — built to survive on 4 GB RAM, no GPU, no excuses.*
+*A hackathon research prototype*
 
 <br>
 

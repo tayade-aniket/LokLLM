@@ -4,6 +4,7 @@ from data.dataset import LocalDataset
 from model.inference import generate_base_and_personalized
 from core.hardware import get_execution_mode, EXECUTION_MODE_DEMO
 from core.logger import get_logger
+import pandas as pd
 
 logger = get_logger(__name__)
 
@@ -13,22 +14,59 @@ _DOMAIN_EMOJI = {
     "Financial Literacy": "💰",
 }
 
+_DOMAIN_COLOR = {
+    "Healthcare": "#FF6B35",
+    "Education": "#1565C0",
+    "Financial Literacy": "#2E7D32",
+}
 
-def _render_dataset_card(client_data: dict) -> None:
-    domain = client_data["domain"]
-    emoji = _DOMAIN_EMOJI.get(domain, "📋")
+
+def _section_header(title: str) -> None:
     st.markdown(
         f"""
-        <div style="background:#1e1e1e;border:1px solid #333;border-radius:8px;padding:16px;margin-bottom:12px">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-                <span style="font-size:1.5em">{emoji}</span>
+        <div style="margin:28px 0 14px 0">
+            <div style="font-size:1.05em;font-weight:700;color:#111111">{title}</div>
+            <div style="height:2px;background:linear-gradient(to right,#FF6B35,transparent);
+                        margin-top:5px;border-radius:2px"></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_dataset_card(client_data: dict, selected: bool = False) -> None:
+    domain = client_data["domain"]
+    emoji = _DOMAIN_EMOJI.get(domain, "📋")
+    color = _DOMAIN_COLOR.get(domain, "#FF6B35")
+    border = f"2px solid {color}" if selected else "1px solid #E8E8E8"
+    bg = "#FFF8F5" if selected else "#FFFFFF"
+    st.markdown(
+        f"""
+        <div style="background:{bg};border:{border};border-radius:10px;
+                    padding:16px;margin-bottom:8px;
+                    box-shadow:0 1px 4px rgba(0,0,0,0.06)">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+                <span style="font-size:1.6em">{emoji}</span>
                 <div>
-                    <span style="color:#FF6B35;font-weight:bold">{client_data['client_id']}</span>
-                    <span style="color:#aaa;margin-left:8px">{domain} / {client_data['language']}</span>
+                    <div style="color:{color};font-weight:700;font-size:0.95em">
+                        {client_data['client_id']}
+                    </div>
+                    <div style="color:#555555;font-size:0.8em">{domain} · {client_data['language']}</div>
                 </div>
             </div>
-            <div style="color:#ccc;font-size:0.9em">{client_data['description']}</div>
-            <div style="color:#888;font-size:0.8em;margin-top:8px">{client_data['num_samples']} synthetic samples · Data stays on device</div>
+            <div style="color:#444444;font-size:0.85em;line-height:1.5">
+                {client_data['description']}
+            </div>
+            <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+                <span style="background:#F0F0F0;color:#555;font-size:0.75em;
+                             padding:3px 10px;border-radius:12px">
+                    {client_data['num_samples']} samples
+                </span>
+                <span style="background:#E8F5E9;color:#2E7D32;font-size:0.75em;
+                             padding:3px 10px;border-radius:12px">
+                    🔒 stays on device
+                </span>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -38,21 +76,23 @@ def _render_dataset_card(client_data: dict) -> None:
 def render() -> None:
     st.markdown(
         """
-        <h2 style="color:#FF6B35">🎯 Personalization</h2>
-        <p style="color:#aaa">
-        Demonstrate local personalization using synthetic private data.
-        Raw data never leaves the device — only adapter weights are transmitted.
-        </p>
+        <div style="padding:8px 0 20px 0">
+            <h2 style="color:#FF6B35;font-weight:800;margin-bottom:4px">🎯 Personalization</h2>
+            <p style="color:#555555;font-size:1.0em;margin:0">
+                Demonstrate local personalization using synthetic private data.
+                Raw data never leaves the device — only adapter weights are transmitted.
+            </p>
+        </div>
+        <hr style="border:none;border-top:1px solid #EBEBEB;margin-bottom:20px">
         """,
         unsafe_allow_html=True,
     )
 
     mode = get_execution_mode()
 
-    st.markdown("### 📂 Synthetic Local Datasets")
     st.info(
-        "These synthetic datasets represent private local user data. "
-        "**They are never transmitted.** Only the resulting adapter weights leave the device."
+        "🔒 **Privacy guarantee:** These synthetic datasets represent private local user data. "
+        "**They are never transmitted.** Only the resulting LoRA adapter weights (~192 KB) leave the device."
     )
 
     try:
@@ -61,11 +101,13 @@ def render() -> None:
         st.error(f"Failed to load synthetic data: {e}")
         return
 
+    _section_header("📂 Client Profiles")
+
     selected_client_id = st.selectbox(
-        "Select client profile",
+        "Active client",
         options=[d["client_id"] for d in all_data],
         format_func=lambda cid: next(
-            f"{d['client_id']} — {d['domain']} / {d['language']}"
+            f"{_DOMAIN_EMOJI.get(d['domain'], '📋')}  {d['client_id']} — {d['domain']} / {d['language']}"
             for d in all_data if d["client_id"] == cid
         ),
     )
@@ -75,28 +117,34 @@ def render() -> None:
     col_cards = st.columns(len(all_data))
     for idx, client_data in enumerate(all_data):
         with col_cards[idx]:
-            _render_dataset_card(client_data)
+            _render_dataset_card(client_data, selected=client_data["client_id"] == selected_client_id)
 
-    st.markdown("### 🔍 Sample Data")
+    _section_header("🔍 Sample Data Preview")
+
     dataset = LocalDataset.from_dict(selected_data)
     sample_count = st.slider("Samples to preview", min_value=1, max_value=min(5, len(dataset)), value=3)
 
     sample_df_data = []
-    for i, sample in enumerate(dataset.samples[:sample_count]):
+    for sample in dataset.samples[:sample_count]:
         sample_df_data.append({
             "Input (Local Language)": sample["input"],
             "Expected Response": sample["output"],
         })
 
-    import pandas as pd
     st.dataframe(pd.DataFrame(sample_df_data), use_container_width=True)
 
-    st.markdown("### 💬 Inference Demo")
+    _section_header("💬 Inference Demo")
+
+    mode_color = "#FF6B35" if mode == EXECUTION_MODE_DEMO else "#2E7D32"
+    mode_label = "Responses are simulated — DEMO mode" if mode == EXECUTION_MODE_DEMO else "Using local model"
     st.markdown(
         f"""
-        <div style="background:#2a1a0a;border:1px solid #FF6B35;border-radius:6px;padding:10px;margin-bottom:12px">
-            <strong style="color:#FF6B35">Mode:</strong>
-            <span style="color:#ccc"> {mode} — {'Responses are simulated' if mode == EXECUTION_MODE_DEMO else 'Using local model'}</span>
+        <div style="background:#FFF8F5;border:1px solid #FFD5C2;border-left:4px solid {mode_color};
+                    border-radius:8px;padding:10px 16px;margin-bottom:16px;
+                    display:flex;align-items:center;gap:10px">
+            <span style="background:{mode_color};color:white;padding:2px 10px;border-radius:12px;
+                          font-size:0.78em;font-weight:700">{mode}</span>
+            <span style="color:#444444;font-size:0.88em">{mode_label}</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -104,10 +152,10 @@ def render() -> None:
 
     sample_prompts = dataset.get_prompts()
     prompt_options = ["(Type your own)"] + sample_prompts[:5]
-    chosen = st.selectbox("Choose a sample prompt or type your own", prompt_options)
+    chosen = st.selectbox("Choose a sample prompt", prompt_options)
 
     if chosen == "(Type your own)":
-        prompt = st.text_input("Enter your prompt", value="")
+        prompt = st.text_input("Enter your prompt", value="", placeholder="Type a question...")
     else:
         prompt = st.text_input("Prompt", value=chosen)
 
@@ -132,11 +180,14 @@ def render() -> None:
             base = results["base_response"]
             st.markdown(
                 f"""
-                <div style="background:#1e1e1e;border:1px solid #444;border-radius:6px;padding:14px">
-                    <div style="color:#888;font-size:0.75em;margin-bottom:8px">
-                        Mode: {base['mode']} · Latency: {base['latency_ms']} ms
+                <div style="background:#FAFAFA;border:1px solid #E0E0E0;border-radius:8px;padding:16px">
+                    <div style="color:#888888;font-size:0.75em;margin-bottom:10px;
+                                display:flex;gap:8px;align-items:center">
+                        <span style="background:#E8E8E8;color:#555;padding:2px 8px;
+                                     border-radius:10px;font-size:0.9em">{base['mode']}</span>
+                        <span>Latency: {base['latency_ms']} ms</span>
                     </div>
-                    <div style="color:#eee">{base['response']}</div>
+                    <div style="color:#222222;line-height:1.65;font-size:0.92em">{base['response']}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
@@ -145,23 +196,28 @@ def render() -> None:
         with col_pers:
             st.markdown("#### ✨ Personalized Response")
             pers = results["personalized_response"]
+            personalization_label = "Applied" if results["personalization_applied"] else "None"
             st.markdown(
                 f"""
-                <div style="background:#1a1e1a;border:1px solid #4CAF50;border-radius:6px;padding:14px">
-                    <div style="color:#888;font-size:0.75em;margin-bottom:8px">
-                        Mode: {pers['mode']} · Personalization: {'Applied' if results['personalization_applied'] else 'None'}
+                <div style="background:#F0FFF4;border:1px solid #A5D6A7;border-radius:8px;padding:16px">
+                    <div style="color:#888888;font-size:0.75em;margin-bottom:10px;
+                                display:flex;gap:8px;align-items:center">
+                        <span style="background:#C8E6C9;color:#2E7D32;padding:2px 8px;
+                                     border-radius:10px;font-size:0.9em">{pers['mode']}</span>
+                        <span>Personalization: {personalization_label}</span>
                     </div>
-                    <div style="color:#eee">{pers['response']}</div>
+                    <div style="color:#222222;line-height:1.65;font-size:0.92em">{pers['response']}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
-    st.markdown("### 🔒 Privacy Reminder")
+    _section_header("🔒 Privacy Status")
+
     col_p1, col_p2, col_p3 = st.columns(3)
     with col_p1:
-        st.success("✅ Raw data: **0 bytes transmitted**")
+        st.success("✅ Raw data — **0 bytes transmitted**")
     with col_p2:
-        st.success("✅ Training: **local only**")
+        st.success("✅ Training — **local only**")
     with col_p3:
-        st.success("✅ Adapter weights: **transmitted (not raw data)**")
+        st.success("✅ Adapter weights — **only output transmitted**")

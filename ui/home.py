@@ -5,21 +5,42 @@ import psutil
 
 
 def _mode_badge(mode: str) -> str:
-    colors = {
-        EXECUTION_MODE_DEMO: "#FF6B35",
-        EXECUTION_MODE_LIGHTWEIGHT: "#2196F3",
-        EXECUTION_MODE_CLOUD: "#4CAF50",
+    styles = {
+        EXECUTION_MODE_DEMO: ("background:#FF6B35;color:white", "DEMO"),
+        EXECUTION_MODE_LIGHTWEIGHT: ("background:#1565C0;color:white", "LIGHTWEIGHT LOCAL"),
+        EXECUTION_MODE_CLOUD: ("background:#2E7D32;color:white", "CLOUD TRAINING"),
     }
-    color = colors.get(mode, "#888888")
-    return f'<span style="background:{color};color:white;padding:3px 10px;border-radius:4px;font-weight:bold;font-size:0.85em">{mode}</span>'
+    style, label = styles.get(mode, ("background:#888;color:white", mode))
+    return (
+        f'<span style="{style};padding:4px 14px;border-radius:20px;'
+        f'font-weight:700;font-size:0.82em;letter-spacing:0.04em">{label}</span>'
+    )
 
 
 def _metric_card(label: str, value: str, unit: str = "") -> None:
     st.markdown(
         f"""
-        <div style="background:#1e1e1e;border-left:4px solid #FF6B35;padding:12px 16px;border-radius:6px;margin-bottom:8px">
-            <div style="color:#aaa;font-size:0.8em;text-transform:uppercase;letter-spacing:0.05em">{label}</div>
-            <div style="color:#fff;font-size:1.3em;font-weight:600">{value}<span style="color:#888;font-size:0.7em;margin-left:4px">{unit}</span></div>
+        <div style="background:#FFFFFF;border:1px solid #E8E8E8;border-left:4px solid #FF6B35;
+                    padding:14px 18px;border-radius:8px;margin-bottom:8px;
+                    box-shadow:0 1px 4px rgba(0,0,0,0.06)">
+            <div style="color:#888888;font-size:0.75em;text-transform:uppercase;
+                        letter-spacing:0.06em;margin-bottom:4px">{label}</div>
+            <div style="color:#111111;font-size:1.25em;font-weight:700">
+                {value}<span style="color:#AAAAAA;font-size:0.65em;margin-left:5px">{unit}</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _section_header(title: str) -> None:
+    st.markdown(
+        f"""
+        <div style="margin:28px 0 14px 0">
+            <div style="font-size:1.05em;font-weight:700;color:#111111">{title}</div>
+            <div style="height:2px;background:linear-gradient(to right,#FF6B35,transparent);
+                        margin-top:5px;border-radius:2px"></div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -29,11 +50,15 @@ def _metric_card(label: str, value: str, unit: str = "") -> None:
 def render() -> None:
     st.markdown(
         """
-        <h1 style="color:#FF6B35;margin-bottom:0">PRIVFEDQLORA</h1>
-        <p style="color:#aaa;margin-top:4px;font-size:1.1em">
-        Privacy-Preserving On-Device Personalization of LLMs via Federated QLoRA
-        </p>
-        <hr style="border-color:#333;margin:16px 0">
+        <div style="padding:8px 0 20px 0">
+            <h1 style="color:#FF6B35;font-size:2.2em;font-weight:800;margin-bottom:4px;letter-spacing:-0.01em">
+                LokLLM
+            </h1>
+            <p style="color:#555555;font-size:1.05em;margin:0">
+                Privacy-Preserving On-Device Personalization of LLMs via Federated QLoRA
+            </p>
+        </div>
+        <hr style="border:none;border-top:1px solid #EBEBEB;margin-bottom:20px">
         """,
         unsafe_allow_html=True,
     )
@@ -47,16 +72,19 @@ def render() -> None:
 
     col_mode, col_msg = st.columns([1, 3])
     with col_mode:
-        st.markdown(_mode_badge(mode), unsafe_allow_html=True)
+        st.markdown(
+            f'<div style="padding-top:6px">{_mode_badge(mode)}</div>',
+            unsafe_allow_html=True,
+        )
     with col_msg:
         if mode == EXECUTION_MODE_DEMO:
             st.info("Running in **DEMO mode** — model not loaded. All outputs are simulated and clearly labelled.")
         elif mode == EXECUTION_MODE_LIGHTWEIGHT:
-            st.success("Running in **LIGHTWEIGHT LOCAL mode** — small local model available.")
+            st.success("Running in **LIGHTWEIGHT LOCAL mode** — small local model is available.")
         else:
-            st.success("Running in **CLOUD TRAINING mode** — GPU available.")
+            st.success("Running in **CLOUD TRAINING mode** — GPU detected.")
 
-    st.markdown("### 🖥️ System Hardware")
+    _section_header("🖥️ System Hardware")
 
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -78,7 +106,8 @@ def render() -> None:
     with col8:
         _metric_card("CUDA", profile.cuda_version if profile.cuda_available else "Not Available")
 
-    st.markdown("### 📊 Live Resource Usage")
+    _section_header("📊 Live Resource Usage")
+
     try:
         snap = collect_system_snapshot()
         col_ram, col_cpu = st.columns(2)
@@ -91,47 +120,73 @@ def render() -> None:
     except BenchmarkError as e:
         st.warning(f"Could not read live metrics: {e}")
 
-    st.markdown("### 🏗️ Architecture")
-    st.markdown(
-        """
-        ```
-        User Device (4 GB RAM, No GPU)
-        ┌─────────────────────────────────────┐
-        │  Synthetic Local Data               │
-        │  Personalization Config             │
-        │  Privacy Audit                      │
-        │  Streamlit Dashboard                │
-        │  Hardware Monitoring                │
-        └──────────────┬──────────────────────┘
-                       │ Adapter Weights Only
-                       │ (No Raw Data Transmitted)
-        ┌──────────────▼──────────────────────┐
-        │  Cloud GPU Environment              │
-        │  QLoRA Training (4-bit NF4)         │
-        │  3-Client Flower Simulation         │
-        │  FedAvg Aggregation                 │
-        │  Adapter Export                     │
-        └─────────────────────────────────────┘
-        ```
-        """
-    )
+    _section_header("🏗️ Architecture")
 
-    st.markdown("### 💡 Core Message")
-    st.info(
-        "**Personal data stays with the client.** Model knowledge is collaboratively improved "
-        "through parameter-efficient LoRA updates rather than sharing raw data. "
-        "Only compressed adapter weights (~192 KB) cross the network boundary."
-    )
+    col_arch_left, col_arch_right = st.columns([2, 1])
+    with col_arch_left:
+        st.markdown(
+            """
+            ```
+            User Device (4 GB RAM, No GPU)
+            ┌─────────────────────────────────────┐
+            │  Synthetic Local Data               │
+            │  Personalization Config             │
+            │  Privacy Audit · Dashboard          │
+            │  Hardware Monitoring                │
+            └──────────────┬──────────────────────┘
+                           │ Adapter Weights Only (~192 KB)
+                           │ ❌ No Raw Data Transmitted
+            ┌──────────────▼──────────────────────┐
+            │  Cloud GPU Environment              │
+            │  QLoRA Training (4-bit NF4)         │
+            │  3-Client Flower FedAvg Simulation  │
+            │  Adapter Export                     │
+            └─────────────────────────────────────┘
+            ```
+            """
+        )
+    with col_arch_right:
+        st.markdown(
+            """
+            <div style="background:#FFF8F5;border:1px solid #FFD5C2;border-radius:10px;
+                        padding:16px 18px;margin-top:8px">
+                <div style="color:#FF6B35;font-weight:700;font-size:0.9em;margin-bottom:10px">
+                    💡 Core Principle
+                </div>
+                <div style="color:#333333;font-size:0.88em;line-height:1.65">
+                    Personal data stays on the client.<br><br>
+                    Only compressed LoRA adapter weights
+                    (~192 KB) cross the network — never
+                    raw conversations, medical records,
+                    or financial data.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-    st.markdown("### 🗺️ Navigation")
-    st.markdown(
-        """
-        | Page | Description |
-        |------|-------------|
-        | 🏠 Home | Hardware info and system overview |
-        | 🎯 Personalization | Synthetic data and personalized inference |
-        | 🌐 Federation | Federated learning round control |
-        | 🔒 Privacy Audit | Privacy boundary visualization |
-        | 📈 Benchmarks | Resource and performance metrics |
-        """
-    )
+    _section_header("🗺️ Quick Navigation")
+
+    nav_col1, nav_col2, nav_col3 = st.columns(3)
+    nav_items = [
+        ("🎯", "Personalization", "Synthetic data · Base vs. personalized responses"),
+        ("🌐", "Federation", "FedAvg simulation · 3-client FL rounds"),
+        ("🔒", "Privacy Audit", "Data boundary · DP · Secure aggregation"),
+        ("📈", "Benchmarks", "RAM · CPU · Adapter size · Latency"),
+        ("🏠", "Home", "This page — hardware profile and system overview"),
+    ]
+    cols = [nav_col1, nav_col2, nav_col3]
+    for i, (emoji, name, desc) in enumerate(nav_items):
+        with cols[i % 3]:
+            st.markdown(
+                f"""
+                <div style="background:#FFFFFF;border:1px solid #E8E8E8;border-radius:8px;
+                            padding:14px 16px;margin-bottom:10px;
+                            box-shadow:0 1px 4px rgba(0,0,0,0.05)">
+                    <div style="font-size:1.4em;margin-bottom:4px">{emoji}</div>
+                    <div style="font-weight:700;color:#111111;font-size:0.95em">{name}</div>
+                    <div style="color:#888888;font-size:0.8em;margin-top:3px">{desc}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
