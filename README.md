@@ -41,7 +41,7 @@ The problem is particularly acute in the Indian context, where:
 
 ### What LokLLM Proposes
 
-PRIVFEDQLORA is a research prototype that demonstrates a **privacy-first, on-device personalization pipeline** for 2–7 billion parameter language models, designed to operate within the hardware envelope of Indian mid-range consumer devices. The system integrates three complementary technologies:
+LokLLM is a research prototype that demonstrates a **privacy-first, on-device personalization pipeline** for 2–7 billion parameter language models, designed to operate within the hardware envelope of Indian mid-range consumer devices. The system integrates three complementary technologies:
 
 #### 1. Edge-Deployable Base Models (2–7B Parameters, 4-bit NF4 Quantization)
 
