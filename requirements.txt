@@ -1,0 +1,15 @@
+torch>=2.0.0
+transformers>=4.40.0
+peft>=0.10.0
+accelerate>=0.27.0
+bitsandbytes>=0.43.0
+flwr>=1.8.0
+streamlit>=1.35.0
+numpy>=1.24.0
+pandas>=2.0.0
+psutil>=5.9.0
+plotly>=5.18.0
+python-dotenv>=1.0.0
+pytest>=8.0.0
+scipy>=1.11.0
+sentencepiece>=0.1.99
